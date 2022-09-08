@@ -21,12 +21,12 @@ def unsuspend():
     decks = mw.addonManager.getConfig(__name__)['unsuspender']
     characters = set()
     for deck_id, field in decks.items():
-        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = %s AND queue != -1' % deck_id):
+        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ? AND queue != -1', deck_id):
             note = mw.col.getNote(row[0]) # get_note
             characters |= set(note[field])
     n_updated = 0
     for deck_id, field in decks.items():
-        for row in mw.col.db.execute('SELECT id, nid FROM cards WHERE did = %s AND queue = -1' % deck_id):
+        for row in mw.col.db.execute('SELECT id, nid FROM cards WHERE did = ? AND queue = -1', deck_id):
             note = mw.col.getNote(row[1]) # get_note
             if set(note[field]).issubset(characters):
                 note.addTag("auto_unsuspended")
@@ -46,11 +46,11 @@ def markUnique():
     uniquecount = 0
     nonuniquecount = 0
     for deck_id, [pinyinfield, _] in decks.items():
-        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = %s' % deck_id):
+        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ?', deck_id):
             note = mw.col.getNote(row[0]) # get_note
             counts[note[pinyinfield]] += 1
     for deck_id, [pinyinfield, markfield] in decks.items():
-        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = %s' % deck_id):
+        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ?', deck_id):
             note = mw.col.getNote(row[0]) # get_note
             if counts[note[pinyinfield]] == 1:
                 note[markfield] = "unique"
