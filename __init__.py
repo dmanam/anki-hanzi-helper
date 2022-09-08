@@ -3,6 +3,8 @@ from aqt.utils import showInfo, chooseList, getText
 from aqt.qt import *
 from anki.storage import Collection
 
+from collections import defaultdict
+
 def showDecks():
     text = ""
     for deck in mw.col.decks.all():
@@ -16,7 +18,7 @@ def showDecks():
     dialog.exec()
 
 def unsuspend():
-    decks = mw.addonManager.getConfig(__name__)['decks']
+    decks = mw.addonManager.getConfig(__name__)['unsuspender']
     characters = set()
     for deck_id, field in decks.items():
         for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = %s AND queue != -1' % deck_id):
@@ -38,11 +40,38 @@ def unsuspend():
     dialog.setStandardButtons(QMessageBox.Ok)
     dialog.exec()
 
-menu = QMenu('Hanzi Unsuspender', mw)
+def markUnique():
+    decks = mw.addonManager.getConfig(__name__)['uniquemarker']
+    counts = defaultdict(lambda: 0)
+    uniquecount = 0
+    nonuniquecount = 0
+    for deck_id, [pinyinfield, _] in decks.items():
+        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = %s' % deck_id):
+            note = mw.col.getNote(row[0]) # get_note
+            counts[note[pinyinfield]] += 1
+    for deck_id, [pinyinfield, markfield] in decks.items():
+        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = %s' % deck_id):
+            note = mw.col.getNote(row[0]) # get_note
+            if counts[note[pinyinfield]] == 1:
+                note[markfield] = "unique"
+                note.flush() # col.update_note(note)
+                uniquecount += 1
+            else:
+                note[markfield] = ""
+                note.flush() # col.update_note(note)
+                nonuniquecount += 1
+    dialog = QMessageBox()
+    dialog.setText("Finished marking %i unique notes and %i non-unique notes" % (uniquecount, nonuniquecount))
+    dialog.setStandardButtons(QMessageBox.Ok)
+    dialog.exec()
+
+menu = QMenu('Hanzi Helper', mw)
 menu_show_decks = menu.addAction('Show Deck IDs')
-menu_unsuspend = menu.addAction('Run')
+menu_unsuspend = menu.addAction('Run Unsuspender')
+menu_unique = menu.addAction('Mark Pinyin Uniqueness')
 
 menu_show_decks.triggered.connect(showDecks)
 menu_unsuspend.triggered.connect(unsuspend)
+menu_unique.triggered.connect(markUnique)
 
 mw.form.menuTools.addMenu(menu)
