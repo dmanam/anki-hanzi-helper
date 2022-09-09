@@ -42,24 +42,26 @@ def unsuspend():
 
 def markUnique():
     decks = mw.addonManager.getConfig(__name__)['uniquemarker']
+    nids = {}
     counts = defaultdict(lambda: 0)
     uniquecount = 0
     nonuniquecount = 0
-    for deck_id, [pinyinfield, _] in decks.items():
-        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ?', deck_id):
-            note = mw.col.getNote(row[0]) # get_note
-            counts[note[pinyinfield]] += 1
     for deck_id, [pinyinfield, markfield] in decks.items():
         for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ?', deck_id):
-            note = mw.col.getNote(row[0]) # get_note
-            if counts[note[pinyinfield]] == 1:
-                note[markfield] = "unique"
-                note.flush() # col.update_note(note)
-                uniquecount += 1
-            else:
-                note[markfield] = ""
-                note.flush() # col.update_note(note)
-                nonuniquecount += 1
+            nids[row[0]] = [pinyinfield, markfield]
+    for nid in nids:
+        note = mw.col.getNote(nid) # get_note
+        counts[note[pinyinfield]] += 1
+    for nid, [pinyinfield, markfield] in nids.items():
+        note = mw.col.getNote(nid) # get_note
+        if counts[note[pinyinfield]] == 1:
+            note[markfield] = "unique"
+            note.flush() # col.update_note(note)
+            uniquecount += 1
+        else:
+            note[markfield] = ""
+            note.flush() # col.update_note(note)
+            nonuniquecount += 1
     dialog = QMessageBox()
     dialog.setText("Finished marking %i unique notes and %i non-unique notes" % (uniquecount, nonuniquecount))
     dialog.setStandardButtons(QMessageBox.Ok)
