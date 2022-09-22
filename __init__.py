@@ -4,6 +4,9 @@ from aqt.qt import *
 from anki.storage import Collection
 
 from collections import defaultdict
+import os
+
+__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 def showDecks():
     text = ""
@@ -18,14 +21,16 @@ def showDecks():
     dialog.exec()
 
 def unsuspend():
-    decks = mw.addonManager.getConfig(__name__)['unsuspender']
+    conf = mw.addonManager.getConfig(__name__)
+    decks = conf['decks']
+    field = conf['fields']['hanzi']
     characters = set()
-    for deck_id, field in decks.items():
+    for deck_id in decks:
         for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ? AND queue != -1', deck_id):
             note = mw.col.getNote(row[0]) # get_note
             characters |= set(note[field])
     n_updated = 0
-    for deck_id, field in decks.items():
+    for deck_id in decks:
         for row in mw.col.db.execute('SELECT id, nid FROM cards WHERE did = ? AND queue = -1', deck_id):
             note = mw.col.getNote(row[1]) # get_note
             if set(note[field]).issubset(characters):
@@ -41,18 +46,21 @@ def unsuspend():
     dialog.exec()
 
 def markUnique():
-    decks = mw.addonManager.getConfig(__name__)['uniquemarker']
-    nids = {}
+    conf = mw.addonManager.getConfig(__name__)
+    decks = conf['decks']
+    pinyinfield = conf['fields']['pinyin']
+    markfield = conf['fields']['pinyin unique']
+    nids = set()
     counts = defaultdict(lambda: 0)
     uniquecount = 0
     nonuniquecount = 0
-    for deck_id, [pinyinfield, markfield] in decks.items():
+    for deck_id in decks:
         for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ?', deck_id):
-            nids[row[0]] = [pinyinfield, markfield]
+            nids.add(row[0])
     for nid in nids:
         note = mw.col.getNote(nid) # get_note
         counts[note[pinyinfield]] += 1
-    for nid, [pinyinfield, markfield] in nids.items():
+    for nid in nids:
         note = mw.col.getNote(nid) # get_note
         if counts[note[pinyinfield]] == 1:
             note[markfield] = "unique"
@@ -125,13 +133,137 @@ def doMerge():
     dialog.setStandardButtons(QMessageBox.Ok)
     dialog.exec()
 
+def markHSK():
+    decks = mw.addonManager.getConfig(__name__)['unsuspender']
+    for deck_id in decks:
+        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ?', deck_id):
+            note = mw.col.getNote(row[0]) # get_note
+            if note.hasTag("HSKv3_789"):
+                note["HSKv3 Level"] = "7"
+            for i in range(6,0,-1):
+                if note.hasTag("HSK%i" % i):
+                    note["HSK Level"] = str(i)
+                if note.hasTag("HSKv3_%i" % i):
+                    note["HSKv3 Level"] = str(i)
+            note.flush()
+    dialog = QMessageBox()
+    dialog.setText("ok")
+    dialog.setStandardButtons(QMessageBox.Ok)
+    dialog.exec()
+
+def markFrequency():
+    import csv
+    conf = mw.addonManager.getConfig(__name__)
+    decks = conf['decks']
+    wordfield = conf['fields']['hanzi']
+    rankfield = conf['fields']['frequency ranking']
+    pctfield = conf['fields']['frequency percentage']
+    filename = os.path.join(__location__, "freq.tsv")
+    freqlist = []
+    total = 0
+    with open(filename, 'r', newline='') as file:
+        reader = csv.reader(file, delimiter='\t')
+        for word, freqstr in reader:
+            freq = int(freqstr)
+            total += freq
+            freqlist += [(word, freq)]
+    freqlist.sort(key=lambda x: -x[1])
+    freqdict = {}
+    for i in range(len(freqlist)):
+        word, freq = freqlist[i]
+        freqdict[word] = (i, freq / total)
+    notes = set()
+    for deck_id in decks:
+        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ?', deck_id):
+            notes.add(row[0])
+    marked = 0
+    unmarked = 0
+    for nid in notes:
+        note = mw.col.getNote(nid) # get_note
+        if (word := note[wordfield]) in freqdict:
+            rank, ratio = freqdict[word]
+            note[rankfield] = str(rank)
+            note[pctfield] = "%.2g" % (ratio * 100)
+            note.flush()
+            marked += 1
+        else:
+            unmarked += 1
+    dialog = QMessageBox()
+    dialog.setText("Marked %i words with frequency information and left %i words without" % (marked, unmarked))
+    dialog.setStandardButtons(QMessageBox.Ok)
+    dialog.exec()
+
+def markKey():
+    import csv
+    import math
+    conf = mw.addonManager.getConfig(__name__)
+    decks = conf['decks']
+    keyfield = conf['fields']['key']
+    wordfield = conf['fields']['hanzi']
+    rankfield = conf['fields']['frequency ranking']
+    hskfield = conf['fields']['hsk level']
+    hskv3field = conf['fields']['hskv3 level']
+    filename = os.path.join(__location__, "order.tsv")
+    orderdict = defaultdict(lambda: math.inf)
+    with open(filename, 'r', newline='') as file:
+        reader = csv.reader(file, delimiter='\t')
+        for word, order in reader:
+            orderdict[word] = int(order)
+    notes = set()
+    for deck_id in decks:
+        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ?', deck_id):
+            notes.add(row[0])
+    notesbyorder = list(notes)
+    def keyfn(nid, swap):
+        note = mw.col.getNote(nid) # get_note
+        word = note[wordfield]
+        charorder = max(orderdict[char] for char in list(word))
+        order = orderdict[word]
+        def getint(field):
+            i = math.inf
+            try:
+                i = int(note[field])
+            except ValueError:
+                pass
+            if i == 0:
+                i = math.inf
+            return i
+        rank = getint(rankfield)
+        hsk = getint(hskfield)
+        hskv3 = getint(hskv3field)
+        middle = [(min(charorder, order), order), rank]
+        if swap:
+            middle.reverse()
+        return [min(hsk, hskv3)] + middle + [max(hsk, hskv3)]
+    notesbyorder.sort(key=lambda x: keyfn(x, False))
+    notesbyrank = sorted(notesbyorder, key=lambda x: keyfn(x, True))
+    seen = set()
+    notelist = []
+    for i in range(len(notesbyorder)):
+        for ls in notesbyorder, notesbyrank:
+            if ls[i] not in seen:
+                notelist += [ls[i]]
+                seen.add(ls[i])
+    for i in range(len(notelist)):
+        note = mw.col.getNote(notelist[i]) # get_note
+        note[keyfield] = str(i)
+        note.flush()
+    dialog = QMessageBox()
+    dialog.setText("Marked %i notes" % len(notelist))
+    dialog.setStandardButtons(QMessageBox.Ok)
+    dialog.exec()
+
 menu = QMenu('Hanzi Helper', mw)
 menu_show_decks = menu.addAction('Show Deck IDs')
 menu_unsuspend = menu.addAction('Run Unsuspender')
 menu_unique = menu.addAction('Mark Pinyin Uniqueness')
+menu_freq = menu.addAction('Mark Word Frequency')
+menu_key = menu.addAction('Mark Key')
 
 menu_show_decks.triggered.connect(showDecks)
 menu_unsuspend.triggered.connect(unsuspend)
 menu_unique.triggered.connect(markUnique)
+menu_freq.triggered.connect(markFrequency)
+menu_key.triggered.connect(markKey)
 
 mw.form.menuTools.addMenu(menu)

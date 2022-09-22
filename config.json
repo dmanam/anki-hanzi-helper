@@ -1,1 +1,14 @@
-{"unsuspender": {}, "uniquemarker": {}}
+{
+  "decks": [],
+  "fields": {
+    "hanzi": "Simplified",
+    "pinyin": "Pinyin",
+    "pinyin unique": "Pinyin Unique",
+    "homophone frequency rank": "Homophone Frequency Rank",
+    "frequency ranking": "Frequency Ranking",
+    "frequency percentage": "Frequency Percentage",
+    "key": "Key",
+    "hsk level": "HSK Level",
+    "hskv3 level": "HSKv3 Level"
+  }
+}
