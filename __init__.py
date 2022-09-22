@@ -5,8 +5,19 @@ from anki.storage import Collection
 
 from collections import defaultdict
 import os
+import math
 
 __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+
+def parseint(s):
+    i = math.inf
+    try:
+        i = int(s)
+    except ValueError:
+        pass
+    if i == 0:
+        i = math.inf
+    return i
 
 def showDecks():
     text = ""
@@ -50,8 +61,10 @@ def markUnique():
     decks = conf['decks']
     pinyinfield = conf['fields']['pinyin']
     markfield = conf['fields']['pinyin unique']
+    rankfield = conf['fields']['frequency ranking']
+    homophonerankfield = conf['fields']['homophone frequency rank']
     nids = set()
-    counts = defaultdict(lambda: 0)
+    chars = defaultdict(lambda: [])
     uniquecount = 0
     nonuniquecount = 0
     for deck_id in decks:
@@ -59,15 +72,20 @@ def markUnique():
             nids.add(row[0])
     for nid in nids:
         note = mw.col.getNote(nid) # get_note
-        counts[note[pinyinfield]] += 1
+        chars[note[pinyinfield]] += [parseint(note[rankfield])]
+        chars[note[pinyinfield]].sort()
     for nid in nids:
         note = mw.col.getNote(nid) # get_note
-        if counts[note[pinyinfield]] == 1:
+        ranks = chars[note[pinyinfield]]
+        if len(ranks) == 1:
             note[markfield] = "unique"
             note.flush() # col.update_note(note)
             uniquecount += 1
         else:
             note[markfield] = ""
+            rank = parseint(note[rankfield])
+            if rank != math.inf or len(set(ranks)) == len(ranks):
+                note[homophonerankfield] = str(ranks.index(rank) + 1)
             note.flush() # col.update_note(note)
             nonuniquecount += 1
     dialog = QMessageBox()
@@ -171,7 +189,7 @@ def markFrequency():
     freqdict = {}
     for i in range(len(freqlist)):
         word, freq = freqlist[i]
-        freqdict[word] = (i, freq / total)
+        freqdict[word] = (i+1, freq / total)
     notes = set()
     for deck_id in decks:
         for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ?', deck_id):
@@ -195,7 +213,6 @@ def markFrequency():
 
 def markKey():
     import csv
-    import math
     conf = mw.addonManager.getConfig(__name__)
     decks = conf['decks']
     keyfield = conf['fields']['key']
@@ -219,18 +236,9 @@ def markKey():
         word = note[wordfield]
         charorder = max(orderdict[char] for char in list(word))
         order = orderdict[word]
-        def getint(field):
-            i = math.inf
-            try:
-                i = int(note[field])
-            except ValueError:
-                pass
-            if i == 0:
-                i = math.inf
-            return i
-        rank = getint(rankfield)
-        hsk = getint(hskfield)
-        hskv3 = getint(hskv3field)
+        rank = parseint(note[rankfield])
+        hsk = parseint(note[hskfield])
+        hskv3 = parseint(note[hskv3field])
         middle = [(min(charorder, order), order), rank]
         if swap:
             middle.reverse()
@@ -256,7 +264,7 @@ def markKey():
 menu = QMenu('Hanzi Helper', mw)
 menu_show_decks = menu.addAction('Show Deck IDs')
 menu_unsuspend = menu.addAction('Run Unsuspender')
-menu_unique = menu.addAction('Mark Pinyin Uniqueness')
+menu_unique = menu.addAction('Mark And Rank Homophones')
 menu_freq = menu.addAction('Mark Word Frequency')
 menu_key = menu.addAction('Mark Key')
 
