@@ -59,9 +59,11 @@ def unsuspend():
 def markUnique():
     conf = mw.addonManager.getConfig(__name__)
     decks = conf['decks']
+    hanzifield = conf['fields']['hanzi']
     pinyinfield = conf['fields']['pinyin']
     markfield = conf['fields']['pinyin unique']
     rankfield = conf['fields']['frequency ranking']
+    homophonefield = conf['fields']['homophones']
     homophonerankfield = conf['fields']['homophone frequency rank']
     nids = set()
     chars = defaultdict(lambda: [])
@@ -72,18 +74,20 @@ def markUnique():
             nids.add(row[0])
     for nid in nids:
         note = mw.col.getNote(nid) # get_note
-        chars[note[pinyinfield]] += [parseint(note[rankfield])]
-        chars[note[pinyinfield]].sort()
+        chars[note[pinyinfield]] += [(note[hanzifield], parseint(note[rankfield]))]
+        chars[note[pinyinfield]].sort(key=lambda x: x[1])
     for nid in nids:
         note = mw.col.getNote(nid) # get_note
-        ranks = chars[note[pinyinfield]]
-        if len(ranks) == 1:
+        homs = chars[note[pinyinfield]]
+        if len(homs) == 1:
             note[markfield] = "unique"
             note.flush() # col.update_note(note)
             uniquecount += 1
         else:
             note[markfield] = ""
+            note[homophonefield] = ', '.join(x[0] for x in homs)
             rank = parseint(note[rankfield])
+            ranks = [x[1] for x in homs]
             if rank != math.inf or len(set(ranks)) == len(ranks):
                 note[homophonerankfield] = str(ranks.index(rank) + 1)
             note.flush() # col.update_note(note)
