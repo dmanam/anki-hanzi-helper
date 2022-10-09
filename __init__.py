@@ -9,15 +9,11 @@ import math
 
 __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
-def parseint(s):
-    i = math.inf
+def parseInt(s, default=math.inf):
     try:
-        i = int(s)
+        return int(s)
     except ValueError:
-        pass
-    if i == 0:
-        i = math.inf
-    return i
+        return default
 
 def showDecks():
     text = ""
@@ -74,7 +70,7 @@ def markUnique():
             nids.add(row[0])
     for nid in nids:
         note = mw.col.getNote(nid) # get_note
-        chars[note[pinyinfield]] += [(note[hanzifield], parseint(note[rankfield]))]
+        chars[note[pinyinfield]] += [(note[hanzifield], parseInt(note[rankfield]))]
         chars[note[pinyinfield]].sort(key=lambda x: x[1])
     for nid in nids:
         note = mw.col.getNote(nid) # get_note
@@ -86,7 +82,7 @@ def markUnique():
         else:
             note[markfield] = ""
             note[homophonefield] = ', '.join(x[0] for x in homs)
-            rank = parseint(note[rankfield])
+            rank = parseInt(note[rankfield])
             ranks = [x[1] for x in homs]
             if rank != math.inf or len(set(ranks)) == len(ranks):
                 note[homophonerankfield] = str(ranks.index(rank) + 1)
@@ -240,9 +236,9 @@ def markKey():
         word = note[wordfield]
         charorder = max(orderdict[char] for char in list(word))
         order = orderdict[word]
-        rank = parseint(note[rankfield])
-        hsk = parseint(note[hskfield])
-        hskv3 = parseint(note[hskv3field])
+        rank = parseInt(note[rankfield])
+        hsk = parseInt(note[hskfield])
+        hskv3 = parseInt(note[hskv3field])
         middle = [(min(charorder, order), order), rank]
         if swap:
             middle.reverse()
@@ -265,17 +261,47 @@ def markKey():
     dialog.setStandardButtons(QMessageBox.Ok)
     dialog.exec()
 
+def markClassifiers():
+    import csv
+    conf = mw.addonManager.getConfig(__name__)
+    decks = conf['decks']
+    wordfield = conf['fields']['hanzi']
+    clfield = conf['fields']['classifiers']
+    filename = os.path.join(__location__, "classifiers.tsv")
+    cldict = {}
+    with open(filename, 'r', newline='') as file:
+        reader = csv.reader(file, delimiter='\t')
+        for word, classifier in reader:
+            cldict[word] = classifier
+    notes = set()
+    for deck_id in decks:
+        for row in mw.col.db.execute('SELECT nid FROM cards WHERE did = ?', deck_id):
+            notes.add(row[0])
+    count = 0
+    for noteid in notes:
+        note = mw.col.getNote(noteid) # get_note
+        if note[wordfield] in cldict:
+            count += 1
+            note[clfield] = cldict[note[wordfield]]
+            note.flush()
+    dialog = QMessageBox()
+    dialog.setText("Marked %i notes" % count)
+    dialog.setStandardButtons(QMessageBox.Ok)
+    dialog.exec()
+
 menu = QMenu('Hanzi Helper', mw)
 menu_show_decks = menu.addAction('Show Deck IDs')
 menu_unsuspend = menu.addAction('Run Unsuspender')
 menu_unique = menu.addAction('Mark And Rank Homophones')
 menu_freq = menu.addAction('Mark Word Frequency')
 menu_key = menu.addAction('Mark Key')
+menu_classifiers = menu.addAction('Mark Classifiers')
 
 menu_show_decks.triggered.connect(showDecks)
 menu_unsuspend.triggered.connect(unsuspend)
 menu_unique.triggered.connect(markUnique)
 menu_freq.triggered.connect(markFrequency)
 menu_key.triggered.connect(markKey)
+menu_classifiers.triggered.connect(markClassifiers)
 
 mw.form.menuTools.addMenu(menu)
